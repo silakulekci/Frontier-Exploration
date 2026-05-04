@@ -1,0 +1,618 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Costmap & A* Navigasyon Simülatörü</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #f5f4ef;
+    --bg2: #eceae2;
+    --text: #1a1a18;
+    --text2: #5f5e5a;
+    --text3: #8c8b86;
+    --border: rgba(0,0,0,0.12);
+    --border2: rgba(0,0,0,0.22);
+    --radius: 8px;
+    --radius-lg: 12px;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #1e1e1c;
+      --bg2: #2a2a28;
+      --text: #e8e6dc;
+      --text2: #9c9a92;
+      --text3: #6a6864;
+      --border: rgba(255,255,255,0.1);
+      --border2: rgba(255,255,255,0.2);
+    }
+  }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 2rem 1rem;
+  }
+
+  h1 {
+    font-size: 20px;
+    font-weight: 500;
+    margin-bottom: 4px;
+  }
+  .subtitle {
+    font-size: 13px;
+    color: var(--text2);
+    margin-bottom: 1.5rem;
+    text-align: center;
+  }
+
+  .wrapper {
+    width: 100%;
+    max-width: 720px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+
+  /* ---- Controls ---- */
+  .controls {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    background: var(--bg2);
+    border: 0.5px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 14px 16px;
+  }
+
+  .ctrl-group {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    flex: 1;
+    min-width: 140px;
+  }
+
+  .ctrl-group label {
+    font-size: 11px;
+    color: var(--text2);
+    display: flex;
+    justify-content: space-between;
+  }
+
+  .ctrl-group label span {
+    font-weight: 500;
+    color: var(--text);
+  }
+
+  input[type=range] {
+    width: 100%;
+    accent-color: var(--text);
+  }
+
+  select {
+    font-size: 12px;
+    padding: 5px 8px;
+    border: 0.5px solid var(--border2);
+    border-radius: var(--radius);
+    background: var(--bg);
+    color: var(--text);
+    cursor: pointer;
+    width: 100%;
+  }
+
+  /* ---- Button row ---- */
+  .btn-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  button {
+    font-size: 12px;
+    padding: 7px 16px;
+    border: 0.5px solid var(--border2);
+    background: var(--bg);
+    color: var(--text);
+    border-radius: var(--radius);
+    cursor: pointer;
+    transition: background .15s, border-color .15s;
+    font-family: inherit;
+  }
+
+  button:hover { background: var(--bg2); }
+
+  button.active {
+    background: var(--text);
+    color: var(--bg);
+    border-color: var(--text);
+  }
+
+  /* ---- Canvas ---- */
+  canvas {
+    border: 0.5px solid var(--border2);
+    border-radius: var(--radius-lg);
+    display: block;
+    cursor: crosshair;
+    image-rendering: pixelated;
+    width: 100%;
+  }
+
+  /* ---- Legend ---- */
+  .legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    font-size: 11px;
+    color: var(--text2);
+    padding: 10px 14px;
+    background: var(--bg2);
+    border: 0.5px solid var(--border);
+    border-radius: var(--radius-lg);
+  }
+
+  .leg-item { display: flex; align-items: center; gap: 5px; }
+
+  .leg-swatch {
+    width: 12px;
+    height: 12px;
+    border-radius: 2px;
+    border: 0.5px solid rgba(0,0,0,0.15);
+    flex-shrink: 0;
+  }
+
+  /* ---- Stats ---- */
+  .stats {
+    font-size: 12px;
+    color: var(--text2);
+    min-height: 20px;
+    padding: 2px 0;
+  }
+
+  .stats .val { font-weight: 500; color: var(--text); }
+  .stats .err { color: #dc2626; }
+
+  /* ---- Info ---- */
+  .info-box {
+    background: var(--bg2);
+    border: 0.5px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 14px 16px;
+    font-size: 12px;
+    color: var(--text2);
+    line-height: 1.7;
+  }
+  .info-box strong { color: var(--text); font-weight: 500; }
+  .info-box code {
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    font-size: 11px;
+    background: var(--bg);
+    padding: 1px 5px;
+    border-radius: 4px;
+    color: var(--text);
+  }
+</style>
+</head>
+<body>
+
+<h1>Costmap & A* Navigasyon Simülatörü</h1>
+<p class="subtitle">Inflation Layer · Maliyet Haritası · A* Rota Planlama</p>
+
+<div class="wrapper">
+
+  <!-- Controls -->
+  <div class="controls">
+    <div class="ctrl-group">
+      <label>Şişirme yarıçapı <span id="lbl-radius">3</span> hücre</label>
+      <input type="range" id="sl-radius" min="0" max="6" step="1" value="3">
+    </div>
+    <div class="ctrl-group">
+      <label>Maliyet ölçek faktörü <span id="lbl-scale">0.8</span></label>
+      <input type="range" id="sl-scale" min="1" max="20" step="1" value="8">
+    </div>
+    <div class="ctrl-group">
+      <label>Görünüm</label>
+      <select id="sel-view">
+        <option value="costmap">Maliyet haritası (ısı)</option>
+        <option value="occupancy">Doluluk ızgarası (binary)</option>
+      </select>
+    </div>
+  </div>
+
+  <!-- Buttons -->
+  <div class="btn-row">
+    <button id="btn-mode-obs"   class="active" onclick="setMode('obs')">✦ Engel ekle</button>
+    <button id="btn-mode-erase"            onclick="setMode('erase')">↩ Sil</button>
+    <button id="btn-mode-start"            onclick="setMode('start')">S — Başlangıç</button>
+    <button id="btn-mode-goal"             onclick="setMode('goal')">G — Hedef</button>
+    <button onclick="clearAll()">Sıfırla</button>
+    <button onclick="loadPreset()">Örnek harita</button>
+  </div>
+
+  <!-- Canvas -->
+  <canvas id="cv"></canvas>
+
+  <!-- Stats -->
+  <div class="stats" id="stats">Başlangıç (S) ve Hedef (G) noktası ekleyin.</div>
+
+  <!-- Legend -->
+  <div class="legend">
+    <div class="leg-item"><div class="leg-swatch" style="background:#1a1a2e"></div>Engel (lethal)</div>
+    <div class="leg-item"><div class="leg-swatch" style="background:#7b1d00"></div>Yüksek maliyet</div>
+    <div class="leg-item"><div class="leg-swatch" style="background:#c97b00"></div>Orta maliyet</div>
+    <div class="leg-item"><div class="leg-swatch" style="background:#d4e6b0"></div>Güvenli alan (free)</div>
+    <div class="leg-item"><div class="leg-swatch" style="background:#2563eb"></div>Planlanan rota</div>
+    <div class="leg-item"><div class="leg-swatch" style="background:#16a34a"></div>Başlangıç noktası</div>
+    <div class="leg-item"><div class="leg-swatch" style="background:#dc2626"></div>Hedef noktası</div>
+  </div>
+
+  <!-- Technical info -->
+  <div class="info-box">
+    <strong>Maliyet fonksiyonu:</strong>
+    <code>cost(d) = 253 × e^(−scale × d)</code> — d: engele Öklid mesafesi, scale: <code>cost_scaling_factor</code> parametresi.<br><br>
+    <strong>Inflation Layer</strong> BFS ile her boş hücrenin en yakın engele mesafesini hesaplar, ardından exponential decay uygular.
+    A* ise <code>g(n) = mesafe + cost × 0.04</code> ile engele yakın "ucuz ama riskli" yollar yerine güvenli koridoru seçer.<br><br>
+    <strong>İpuçları:</strong> Yarıçapı artırmak risk alanını genişletir · Ölçek faktörü düşükken maliyet yavaş bozunur (geniş uyarı bandı) · Sol tık sürükle = duvar çiz.
+  </div>
+
+</div>
+
+<script>
+// ─── Sabitler ───────────────────────────────────────────────
+const COLS = 40, ROWS = 30;
+const LETHAL = 255;
+const COST_INFLUENCE = 0.04; // A*'da maliyet etkisi çarpanı
+
+// ─── Durum ──────────────────────────────────────────────────
+let grid    = new Uint8Array(COLS * ROWS);   // 0=boş, 1=engel
+let costs   = new Float32Array(COLS * ROWS); // her hücrenin maliyet değeri
+let path    = [];
+let startCell = null, goalCell = null;
+let mode    = 'obs';
+let painting = false;
+
+// ─── Canvas kurulumu ────────────────────────────────────────
+const cv  = document.getElementById('cv');
+const ctx = cv.getContext('2d');
+cv.width  = COLS;
+cv.height = ROWS;
+
+// ─── Yardımcı fonksiyonlar ──────────────────────────────────
+function idx(c, r)      { return r * COLS + c; }
+function inBounds(c, r) { return c >= 0 && c < COLS && r >= 0 && r < ROWS; }
+function getRadius()    { return +document.getElementById('sl-radius').value; }
+function getScale()     { return +document.getElementById('sl-scale').value / 10; }
+
+// ─── Kontroller ─────────────────────────────────────────────
+document.getElementById('sl-radius').oninput = e => {
+  document.getElementById('lbl-radius').textContent = e.target.value;
+  recompute();
+};
+document.getElementById('sl-scale').oninput = e => {
+  document.getElementById('lbl-scale').textContent = (+e.target.value / 10).toFixed(1);
+  recompute();
+};
+document.getElementById('sel-view').onchange = draw;
+
+function setMode(m) {
+  mode = m;
+  ['obs','erase','start','goal'].forEach(k => {
+    const b = document.getElementById('btn-mode-' + k);
+    if (b) b.classList.toggle('active', k === m);
+  });
+}
+
+// ─── Inflation Layer (BFS + Exponential Decay) ──────────────
+/**
+ * Adım 1: BFS ile tüm engel hücrelerinden yayılarak her boş
+ *          hücrenin en yakın engele Öklid mesafesi hesaplanır.
+ * Adım 2: cost(d) = 253 * exp(-scale * d)
+ *          d <= radius olan hücrelere maliyet atanır.
+ * Engel hücrelerine doğrudan LETHAL (255) atanır.
+ */
+function computeCostmap() {
+  const scale  = getScale();
+  const radius = getRadius();
+  costs.fill(0);
+
+  // BFS mesafe haritası
+  const dist  = new Float32Array(COLS * ROWS).fill(Infinity);
+  const queue = [];
+
+  for (let r = 0; r < ROWS; r++)
+    for (let c = 0; c < COLS; c++)
+      if (grid[idx(c, r)] === 1) {
+        dist[idx(c, r)] = 0;
+        queue.push([c, r]);
+      }
+
+  // 8 yönlü BFS (Öklid yaklaşımı)
+  const DX = [-1,1,0,0,-1,-1,1,1];
+  const DY = [0,0,-1,1,-1,1,-1,1];
+  const DD = [1,1,1,1,Math.SQRT2,Math.SQRT2,Math.SQRT2,Math.SQRT2];
+
+  let head = 0;
+  while (head < queue.length) {
+    const [c, r] = queue[head++];
+    const cd = dist[idx(c, r)];
+    for (let d = 0; d < 8; d++) {
+      const nc = c + DX[d], nr = r + DY[d];
+      if (!inBounds(nc, nr)) continue;
+      const nd = cd + DD[d];
+      if (nd < dist[idx(nc, nr)]) {
+        dist[idx(nc, nr)] = nd;
+        queue.push([nc, nr]);
+      }
+    }
+  }
+
+  // Maliyet değerlerini hesapla
+  for (let i = 0; i < COLS * ROWS; i++) {
+    if (grid[i] === 1) {
+      costs[i] = LETHAL;
+    } else {
+      const d = dist[i];
+      if (d <= radius) {
+        // Exponential decay: engele yakındıkça maliyet artar
+        costs[i] = Math.min(253, 253 * Math.exp(-scale * d));
+      } else {
+        costs[i] = 0; // Güvenli alan
+      }
+    }
+  }
+}
+
+// ─── A* Algoritması ─────────────────────────────────────────
+/**
+ * Hareket maliyeti: g(n) = öklid_adım + costs[n] * COST_INFLUENCE
+ * Heuristik: Öklid mesafesi (admissible)
+ * Costmap değerleri yüksek olan hücreler daha "pahalı" görünür,
+ * böylece algoritma engel kenarlarından uzak güvenli koridoru seçer.
+ */
+function heuristic(c1, r1, c2, r2) {
+  return Math.sqrt((c1 - c2) ** 2 + (r1 - r2) ** 2);
+}
+
+function astar() {
+  if (!startCell || !goalCell) return [];
+  const [sc, sr] = startCell;
+  const [gc, gr] = goalCell;
+
+  const g      = new Float32Array(COLS * ROWS).fill(Infinity);
+  const f      = new Float32Array(COLS * ROWS).fill(Infinity);
+  const prev   = new Int32Array(COLS * ROWS).fill(-1);
+  const closed = new Uint8Array(COLS * ROWS);
+  const open   = new Set();
+
+  const si = idx(sc, sr);
+  g[si] = 0;
+  f[si] = heuristic(sc, sr, gc, gr);
+  open.add(si);
+
+  const DX = [-1,1,0,0,-1,-1,1,1];
+  const DY = [0,0,-1,1,-1,1,-1,1];
+  const DD = [1,1,1,1,Math.SQRT2,Math.SQRT2,Math.SQRT2,Math.SQRT2];
+
+  while (open.size > 0) {
+    // En düşük f değerli düğümü bul
+    let best = -1, bestF = Infinity;
+    for (const i of open) {
+      if (f[i] < bestF) { bestF = f[i]; best = i; }
+    }
+    open.delete(best);
+
+    const cc = best % COLS;
+    const cr = Math.floor(best / COLS);
+
+    // Hedef ulaşıldı — yolu geri izle
+    if (cc === gc && cr === gr) {
+      const path = [];
+      let cur = best;
+      while (cur !== -1) {
+        path.unshift([cur % COLS, Math.floor(cur / COLS)]);
+        cur = prev[cur];
+      }
+      return path;
+    }
+
+    closed[best] = 1;
+
+    for (let d = 0; d < 8; d++) {
+      const nc = cc + DX[d];
+      const nr = cr + DY[d];
+      if (!inBounds(nc, nr)) continue;
+      const ni = idx(nc, nr);
+      if (closed[ni]) continue;
+      if (costs[ni] >= LETHAL) continue; // Geçilemez engel
+
+      // Maliyet fonksiyonu: adım maliyeti + costmap etkisi
+      const moveCost = DD[d] + costs[ni] * COST_INFLUENCE;
+      const ng = g[best] + moveCost;
+
+      if (ng < g[ni]) {
+        g[ni]    = ng;
+        f[ni]    = ng + heuristic(nc, nr, gc, gr);
+        prev[ni] = best;
+        open.add(ni);
+      }
+    }
+  }
+  return []; // Rota bulunamadı
+}
+
+// ─── Renk hesaplama ─────────────────────────────────────────
+/**
+ * Maliyet değerini renk gradyanına dönüştürür:
+ *   cost=0     → yeşil tonu (güvenli)
+ *   cost=127   → turuncu (orta risk)
+ *   cost=253   → koyu kırmızı (yüksek risk)
+ *   cost=255   → siyah/lacivert (engel)
+ */
+function costToColor(cost, isObstacle, view) {
+  if (view === 'occupancy') {
+    return isObstacle ? [26, 26, 46] : [212, 210, 200];
+  }
+  if (isObstacle) return [26, 26, 46];
+  if (cost <= 0)  return [212, 230, 176]; // Güvenli alan
+
+  const t = Math.min(1, cost / 253);
+  // Interpolasyon: yeşil-sarı → turuncu → koyu kırmızı
+  let r, g, b;
+  if (t < 0.5) {
+    const s = t * 2;
+    r = Math.round(212 + s * (201 - 212));
+    g = Math.round(230 + s * ( 80 - 230));
+    b = Math.round(176 + s * (  0 - 176));
+  } else {
+    const s = (t - 0.5) * 2;
+    r = Math.round(201 + s * (123 - 201));
+    g = Math.round( 80 + s * ( 29 -  80));
+    b = Math.round(  0 + s * (  0 -   0));
+  }
+  return [r, g, b];
+}
+
+// ─── Çizim ──────────────────────────────────────────────────
+function draw() {
+  const view = document.getElementById('sel-view').value;
+  const img  = ctx.createImageData(COLS, ROWS);
+
+  for (let r = 0; r < ROWS; r++) {
+    for (let c = 0; c < COLS; c++) {
+      const i = idx(c, r);
+      const [rv, gv, bv] = costToColor(costs[i], grid[i] === 1, view);
+      const p = i * 4;
+      img.data[p]   = rv;
+      img.data[p+1] = gv;
+      img.data[p+2] = bv;
+      img.data[p+3] = 255;
+    }
+  }
+
+  // Rota hücrelerini mavi boya
+  for (const [c, r] of path) {
+    if (startCell && c === startCell[0] && r === startCell[1]) continue;
+    if (goalCell  && c === goalCell[0]  && r === goalCell[1])  continue;
+    const p = idx(c, r) * 4;
+    img.data[p]   = 37;
+    img.data[p+1] = 99;
+    img.data[p+2] = 235;
+    img.data[p+3] = 255;
+  }
+
+  // Başlangıç → yeşil
+  if (startCell) {
+    const p = idx(...startCell) * 4;
+    img.data[p]=22; img.data[p+1]=163; img.data[p+2]=74; img.data[p+3]=255;
+  }
+
+  // Hedef → kırmızı
+  if (goalCell) {
+    const p = idx(...goalCell) * 4;
+    img.data[p]=220; img.data[p+1]=38; img.data[p+2]=38; img.data[p+3]=255;
+  }
+
+  ctx.putImageData(img, 0, 0);
+  updateStats();
+}
+
+function updateStats() {
+  const el = document.getElementById('stats');
+  if (!startCell || !goalCell) {
+    el.innerHTML = 'Başlangıç <strong>S</strong> ve Hedef <strong>G</strong> noktası ekleyin, rota otomatik hesaplanır.';
+    return;
+  }
+  if (path.length === 0) {
+    el.innerHTML = '<span class="err">Rota bulunamadı — engeller yolu tamamen kapatıyor.</span>';
+    return;
+  }
+  const totalCost = path.reduce((s, [c,r]) => s + costs[idx(c,r)], 0).toFixed(1);
+  const obsCount  = Array.from(grid).filter(v => v).length;
+  el.innerHTML = `Rota uzunluğu: <span class="val">${path.length} hücre</span> &nbsp;|&nbsp; Toplam maliyet: <span class="val">${totalCost}</span> &nbsp;|&nbsp; Engel sayısı: <span class="val">${obsCount}</span>`;
+}
+
+// ─── Ana hesaplama döngüsü ───────────────────────────────────
+function recompute() {
+  computeCostmap();
+  path = astar();
+  draw();
+}
+
+// ─── Canvas etkileşimi ───────────────────────────────────────
+function cellFromEvent(e) {
+  const rect = cv.getBoundingClientRect();
+  const sx = (e.clientX - rect.left) / rect.width;
+  const sy = (e.clientY - rect.top)  / rect.height;
+  return [Math.floor(sx * COLS), Math.floor(sy * ROWS)];
+}
+
+function handleCell(c, r) {
+  if (!inBounds(c, r)) return;
+  if (mode === 'obs') {
+    if (startCell && c === startCell[0] && r === startCell[1]) return;
+    if (goalCell  && c === goalCell[0]  && r === goalCell[1])  return;
+    grid[idx(c, r)] = 1;
+  } else if (mode === 'erase') {
+    grid[idx(c, r)] = 0;
+  } else if (mode === 'start') {
+    startCell = [c, r];
+    grid[idx(c, r)] = 0;
+    setMode('obs');
+  } else if (mode === 'goal') {
+    goalCell = [c, r];
+    grid[idx(c, r)] = 0;
+    setMode('obs');
+  }
+  recompute();
+}
+
+cv.addEventListener('mousedown',  e => { painting = true; handleCell(...cellFromEvent(e)); });
+cv.addEventListener('mousemove',  e => { if (painting && (mode === 'obs' || mode === 'erase')) handleCell(...cellFromEvent(e)); });
+window.addEventListener('mouseup', () => { painting = false; });
+
+cv.addEventListener('touchstart', e => { e.preventDefault(); handleCell(...cellFromEvent(e.touches[0])); }, { passive: false });
+cv.addEventListener('touchmove',  e => { e.preventDefault(); if (mode === 'obs' || mode === 'erase') handleCell(...cellFromEvent(e.touches[0])); }, { passive: false });
+
+// ─── Yardımcı aksiyonlar ─────────────────────────────────────
+function clearAll() {
+  grid.fill(0);
+  path = [];
+  startCell = null;
+  goalCell  = null;
+  recompute();
+}
+
+function loadPreset() {
+  grid.fill(0);
+
+  // Yatay duvar (üst bölge)
+  for (let i = 0; i < 12; i++) grid[idx(8 + i, 8)]  = 1;
+  // Dikey duvar
+  for (let i = 0; i < 10; i++) grid[idx(20, 8 + i)] = 1;
+  // Alt koridor duvarı
+  for (let i = 0; i < 8;  i++) grid[idx(10 + i, 20)] = 1;
+  // İzole bloklar
+  [[30,10],[31,10],[30,11],[31,11],
+   [5,15],[5,16],[6,15],[6,16],
+   [35,22],[36,22],[35,23],[36,23]].forEach(([c,r]) => {
+    if (inBounds(c, r)) grid[idx(c, r)] = 1;
+  });
+
+  startCell = [2, 2];
+  goalCell  = [37, 27];
+  recompute();
+}
+
+// ─── Başlangıç ───────────────────────────────────────────────
+loadPreset();
+</script>
+</body>
+</html>
